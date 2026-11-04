@@ -18,4 +18,4 @@ jobs:
           python3 scripts/dojo.py catalog | grep -q '9 buildable'
           python3 scripts/dojo.py teach --class REPLAY | grep -q 'DOJO LESSON'
           python3 scripts/dojo.py teach --class bogus 2>/dev/null || test $? -eq 2
-          '! grep -E "^[[:space:]]*(import|from)[[:space:]]+(requests|flask|httpx|aiohttp|urllib3)" scripts/dojo.py'
+          ! grep -E "^[[:space:]]*(import|from)[[:space:]]+(requests|flask|httpx|aiohttp|urllib3)" scripts/dojo.py
