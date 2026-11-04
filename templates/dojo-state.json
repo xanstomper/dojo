@@ -1,0 +1,7 @@
+{
+  "mandate": "dojo",
+  "note": "state file under ~/.redteam/campaigns/<c>/ — the range log",
+  "built": [
+    {"class": "BOUNDARY", "port": 8801, "at": "<ISO>", "probed": false}
+  ]
+}
