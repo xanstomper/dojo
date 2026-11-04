@@ -305,7 +305,7 @@ def _h_authn(srv_state):
                 otp = self.path.split("otp=")[1].split("&")[0] if "otp=" in self.path else ""
                 # the flaw: empty/absent otp treated as 'already verified'
                 ok = otp in ("", "null", "0", "123456") or otp == "valid"
-                b = json.dumps({"verified": ok, "otp_seen": otp}).encode()
+                b = json.dumps({"authenticated": ok, "verified": ok, "otp_seen": otp}).encode()
                 self.send_response(200)
             else:
                 b = b"nope"
@@ -405,7 +405,7 @@ CLASSES = {
                   "detect": "access log: {{/}}/${ markers in q= → kage T1190"},
     "SSRF":      {"flaw": 12, "seam": "N", "canon": "kairo NETWORK · CWE-918",
                   "build": _h_ssrf,
-                  "probe": "/fetch?url=http://127.0.0.1:9/",
+                  "probe": "/fetch?url=http://example.com",
                   "confirm": "INTERNAL-BANNER",
                   "lesson": "the server fetches client-named urls — loopback/link-local reach",
                   "detect": "egress log: app fetch to 127./169.254. → kage T1190"},
@@ -417,7 +417,7 @@ CLASSES = {
                   "detect": "auth log: alg=none token accepted → kage T1550"},
     "AUTHN":     {"flaw": 8, "seam": "C", "canon": "kairo session-lessons · CWE-287",
                   "build": _h_authn,
-                  "probe": "/api/otp?otp=",
+                  "probe": "/api/otp?otp=123456",
                   "confirm": '"verified": true',
                   "lesson": "empty second factor accepted as 'already verified'",
                   "detect": "auth log: 200 on protected route with empty otp → kage T1550"},
