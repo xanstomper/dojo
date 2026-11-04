@@ -96,7 +96,9 @@ def _h_traversal(srv_state):
         def log_message(self, *a):
             pass
         def do_GET(self):
-            if "../" in self.path:
+            from urllib.parse import unquote as _uq
+            p = _uq(self.path)
+            if "../" in p:
                 b = b"root:x:0:0:root:/root:/bin/bash\n"
                 self.send_response(200)
             else:
@@ -248,8 +250,9 @@ def _h_ssrf(srv_state):
         def log_message(self, *a):
             pass
         def do_GET(self):
+            from urllib.parse import unquote as _uq
             if self.path.startswith("/fetch"):
-                url = self.path.split("url=")[1] if "url=" in self.path else ""
+                url = _uq(self.path.split("url=")[1]) if "url=" in self.path else ""
                 # the flaw: the server fetches whatever the client names
                 if url.startswith(("http://127.0.0.1", "http://169.254.169.254", "http://localhost")):
                     b = json.dumps({"fetched": "INTERNAL-BANNER-7f3a"}).encode()
