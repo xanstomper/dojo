@@ -15,7 +15,9 @@ jobs:
           set -e
           python3 -m py_compile scripts/dojo.py
           python3 scripts/dojo.py verify | grep -q 'ALL PASS'
-          python3 scripts/dojo.py catalog | grep -q '9 buildable'
+          python3 scripts/dojo.py catalog | grep -q '15 buildable'
           python3 scripts/dojo.py teach --class REPLAY | grep -q 'DOJO LESSON'
+          python3 scripts/dojo.py bench --class BOUNDARY --port 8812 | grep -q 'CONFIRMED'
+          python3 scripts/dojo.py bench --class JWT --port 8813 | grep -q 'CONFIRMED'
           python3 scripts/dojo.py teach --class bogus 2>/dev/null || test $? -eq 2
           ! grep -E "^[[:space:]]*(import|from)[[:space:]]+(requests|flask|httpx|aiohttp|urllib3)" scripts/dojo.py
