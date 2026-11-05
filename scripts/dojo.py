@@ -361,7 +361,7 @@ CLASSES = {
                   "lesson": "sensitive artifacts on the web root — backups, env, git",
                   "detect": "access log: (backup|dump|\\.env|\\.git) + 200 → kage T1552"},
     "TRAVERSAL": {"flaw": 3, "seam": "D", "canon": "kairo type/path · CWE-22",
-                  "build": _h_traversal, "probe": "/files?name=../../etc/passwd",
+                  "build": _h_traversal, "probe": "/files?name=",
                   "confirm": "root:x:0:0",
                   "lesson": "path param never normalized — ../ escapes the root",
                   "detect": "access log: ../ in uri + 200 → kage rule"},
@@ -393,7 +393,7 @@ CLASSES = {
     # v2.0 — the six new buildable classes
     "MASSASSIGN": {"flaw": 21, "seam": "B", "canon": "kairo MASS-ASSIGN · CWE-915",
                    "build": _h_massassign,
-                   "probe": "POST /api/user  name=bob&email=bob@lab&role=admin",
+                   "probe": "POST /api/user  name=bob&email=bob@lab",
                    "confirm": '"role": "admin"',
                    "lesson": "every client field becomes a model field — role arrives as data",
                    "detect": "api log: body carries role= on unprivileged session → kage T1098"},
@@ -432,7 +432,27 @@ CLASSES = {
 
 def _serve(cls, port):
     spec = CLASSES[cls]
-    srv = ThreadingHTTPServer(("127.0.0.1", port), spec["build"]({}))
+    H = spec["build"]({})          # build returns the HANDLER CLASS
+    _p = spec["probe"]
+    _path = _p[5:].strip().split(" ")[0] if _p.startswith("POST ") else _p.split(" ")[0]
+    links = [_path]
+
+    class _Idx(H):
+        # the landing page — a REAL app links its endpoints; the crawler feeds on it
+        def do_GET(self):
+            if self.path == "/" and links[0] != "/":
+                b = (f"<html><body><h1>{cls} demo app</h1>"
+                     + "".join(f'<div><a href="{u}">{u}</a></div>' for u in links)
+                     + "</body></html>").encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+                return
+            return super().do_GET()
+
+    srv = ThreadingHTTPServer(("127.0.0.1", port), _Idx)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     time.sleep(0.3)
     return srv
