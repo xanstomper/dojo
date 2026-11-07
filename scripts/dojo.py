@@ -680,7 +680,14 @@ def _serve(cls, port):
                 self.end_headers()
                 self.wfile.write(b)
                 return
-            return super().do_GET()
+            base = super()
+            if hasattr(base, "do_GET"):
+                return base.do_GET()
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self.wfile.write(b"")
+            return
 
     srv = ThreadingHTTPServer(("127.0.0.1", port), _Idx)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
