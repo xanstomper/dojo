@@ -1,7 +1,7 @@
 ---
 name: dojo
 description: "Trigger `dojo`. THE RANGE — the family's training ground: builds vulnerable replicas of every technique class (16 classes, stdlib, lab-bound 127.0.0.1), and every replica SELF-VERIFIES: `dojo bench` builds it, strikes it, and requires the flaw to confirm. Every lesson ends in the detection rule kage should emit."
-version: 2.0.0
+version: 2.3.0
 author: Hermes Agent
 license: MIT
 platforms: [linux]
