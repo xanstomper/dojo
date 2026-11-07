@@ -1,6 +1,6 @@
 ---
 name: dojo
-description: "Trigger `dojo`. THE RANGE — the family's training ground: builds vulnerable replicas of every technique class (15 classes, stdlib, lab-bound 127.0.0.1), and every replica SELF-VERIFIES: `dojo bench` builds it, strikes it, and requires the flaw to confirm. Every lesson ends in the detection rule kage should emit."
+description: "Trigger `dojo`. THE RANGE — the family's training ground: builds vulnerable replicas of every technique class (16 classes, stdlib, lab-bound 127.0.0.1), and every replica SELF-VERIFIES: `dojo bench` builds it, strikes it, and requires the flaw to confirm. Every lesson ends in the detection rule kage should emit."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -28,7 +28,7 @@ REAL to strike. No replica leaves the loopback; no lesson is theory.
 - **Every lesson ends in detection.** Each class carries the kage rule it should
   produce — the range feeds the purple loop, not just the red one.
 
-## The Classes (15 buildable)
+## The Classes (16 buildable)
 
 | Class | Flaw · Seam | Canon | Probe → confirm |
 |---|---|---|---|
@@ -47,6 +47,7 @@ REAL to strike. No replica leaves the loopback; no lesson is theory.
 | JWT | 6 · C | CWE-347 | alg=none token accepted, signature never checked |
 | AUTHN | 8 · C | CWE-287 | empty OTP = "already verified" |
 | SESSION | 8 · C | CWE-384 | sequential session ids — sid 100 is admin |
+| HWDEV | 6 · E | spydermonkey hardware-canon plane 6 · kairo HWFLASH · CWE-639 | reserved master id `0000` serves the master key |
 
 ## When to Use
 

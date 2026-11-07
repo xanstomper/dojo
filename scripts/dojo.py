@@ -344,6 +344,43 @@ def _h_session(srv_state):
     return H
 
 
+# ── v2.1 (spydermonkey v5.17) — the hardware class: a simulated smart-home
+# device registry (Tuya/ESP-class strip controller) with an enumerable
+# reserved-master IDOR — lab-bound, no real hardware needed to train the flaw.
+
+def _h_hwdev(srv_state):
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def do_GET(self):
+            if self.path.startswith("/api/v1/device/state"):
+                dev = self.path.split("id=")[1].split("&")[0] if "id=" in self.path else ""
+                # the flaw: the reserved MASTER controller (id 0000) is served
+                # to whoever asks — the registry never checks the caller
+                if dev == "0000":
+                    b = json.dumps({"type": "master_controller",
+                                    "master_key": "MASTERKEY-7f3a",
+                                    "state": "armed"}).encode()
+                elif dev:
+                    b = json.dumps({"type": "led_strip", "device": dev,
+                                    "brightness": 255, "state": "on"}).encode()
+                else:
+                    b = json.dumps({"error": "device id required"}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+            else:
+                b = b"nope"
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+    return H
+
+
 CLASSES = {
     "BOUNDARY":  {"flaw": 6, "seam": "E", "canon": "kairo BOUNDARY · CWE-639",
                   "build": _h_boundary, "probe": "/api/orders?org_id=foreign",
@@ -427,6 +464,13 @@ CLASSES = {
                   "confirm": '"role": "admin"',
                   "lesson": "sequential session ids — sid 100 is admin, sid 101 is not",
                   "detect": "auth log: sequential sid accepted → kage T1550"},
+    "HWDEV":     {"flaw": 6, "seam": "E",
+                  "canon": "spydermonkey hardware-canon plane 6 · kairo HWFLASH · CWE-639",
+                  "build": _h_hwdev,
+                  "probe": "/api/v1/device/state?id=0000",
+                  "confirm": '"master_key"',
+                  "lesson": "reserved master device id enumerable — the registry never checks who asks (smart-home IDOR)",
+                  "detect": "api log: device registry hit for reserved id 0000 → kage T1550"},
 }
 
 
@@ -604,7 +648,7 @@ def cmd_verify(args):
     if bad:
         print(f"✗ DOJO verify FAILED: {bad}")
         return 1
-    print("✓ DOJO verify: compile · commands · 15 classes · live build+probe+bench — ALL PASS")
+    print("✓ DOJO verify: compile · commands · 16 classes · live build+probe+bench — ALL PASS")
     return 0
 
 
