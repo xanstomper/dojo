@@ -6,8 +6,9 @@ bench, the engines, and the operator have something real to strike. Every build
 is lab-bound (127.0.0.1), every class maps to canon (kairo flaw/seam), and every
 lesson ends in the detection rule kage should emit.
 
-v2.0 — the range doubles: 15 buildable classes (the 9 originals + MASSASSIGN,
-INJECTION, SSRF, JWT, AUTHN, SESSION), every replica is SELF-VERIFYING
+v3.0 — the range quintuples: 80 buildable classes (16 hand-built archetypes +
+the 64-class surface tier: 16 flaws × API/MQTT/DEVICE/CLOUD surfaces), every
+replica is SELF-VERIFYING
 (`bench --class C` builds it, strikes it with the documented probe, and requires
 the flaw to confirm — a replica that doesn't break is a broken replica), and
 `build --serve-seconds N` gives self-terminating ranges for CI.
@@ -381,6 +382,179 @@ def _h_hwdev(srv_state):
     return H
 
 
+# ── v3.0 (spydermonkey v6.0) — THE SURFACE TIER: 16 archetypes × 4 delivery
+# surfaces (API / MQTT / DEVICE / CLOUD) = 64 generated classes. Same flaw
+# semantics as the archetype, translated to a different protocol surface.
+# Every generated replica self-verifies exactly like the hand-built ones.
+
+_SURFACES = {
+    "API":    {"path": "api/v1",  "flavor": "json service"},
+    "MQTT":   {"path": "mqtt",    "flavor": "simulated broker"},
+    "DEVICE": {"path": "api/v1/device", "flavor": "device registry"},
+    "CLOUD":  {"path": "api/v1/cloud",  "flavor": "cloud control plane"},
+}
+
+# archetype → (probe builder fn(prefix), confirm marker, lesson, detect)
+_ARCS = {
+    "BOUNDARY":  (lambda p: f"/{p}/orders?uid=000-ADMIN", '"secret"',
+                  "scope id from query — the session's uid is never consulted",
+                  "api log: uid != session uid → kage T1068"),
+    "REPLAY":    (lambda p: f"POST /{p}/webhook  body=tx&amt=1", '"dup": 1',
+                  "no idempotency key — the same logical order lands twice",
+                  "request log: same body 2x in 60s → kage T1550"),
+    "HARVEST":   (lambda p: f"/{p}/backup.zip", "FAKEBACKUP",
+                  "sensitive artifact served from the web root",
+                  "access log: backup path + 200 → kage T1552"),
+    "TRAVERSAL": (lambda p: f"/{p}/files?name=../../etc/passwd", "root:x:",
+                  "path param never normalized — ../ escapes the root",
+                  "access log: ../ in uri + 200 → kage rule"),
+    "DIRECTORY": (lambda p: f"/{p}/static/", "backup.zip",
+                  "autoindex left on — entries enumerable",
+                  "access log: listing 200 → kage rule"),
+    "XSS":       (lambda p: f"/{p}/search?q=XSSMARK", "XSSMARK",
+                  "query echoed unencoded — reflection without context-encoding",
+                  "access log: markup in q= reflected → kage rule"),
+    "REDIRECT":  (lambda p: f"/{p}/r?url=https://evil.example", "evil.example",
+                  "Location built from user input — open redirect",
+                  "access log: 302 Location crosses origins → kage rule"),
+    "CRYPTO":    (lambda p: f"/{p}/state", '"cipher": "rc4"',
+                  "legacy cipher advertised — downgrade classes",
+                  "tls scan: rc4 present → kage rule"),
+    "NETWORK":   (lambda p: f"/{p}/net", '"open"',
+                  "service banners exposed — version-pinned classes",
+                  "banner grab: stale strings → kage rule"),
+    "MASSASSIGN": (lambda p: f"POST /{p}/user  name=bob&role=admin", '"role": "admin"',
+                  "every client field becomes a model field — role arrives as data",
+                  "api log: body carries role= on low session → kage T1098"),
+    "INJECTION": (lambda p: f"/{p}/search?q={{{{7*7}}}}", "for 49",
+                  "input reaches a template engine — arithmetic marker answers",
+                  "access log: {{}} markers in q= → kage T1190"),
+    "SSRF":      (lambda p: f"/{p}/fetch?url=http://127.0.0.1", "INTERNAL-BANNER",
+                  "server fetches client-named urls — loopback reach",
+                  "egress log: fetch to 127. → kage T1190"),
+    "JWT":       (lambda p: f"/{p}/admin?token=eyJhbGciOiJub25lIn0.eyJyb2xlIjoiYWRtaW4ifQ.", '"admin": true',
+                  "signature never verified — the payload claim IS the authz",
+                  "auth log: alg=none token accepted → kage T1550"),
+    "AUTHN":     (lambda p: f"/{p}/otp?otp=", '"verified": true',
+                  "empty second factor accepted as 'already verified'",
+                  "auth log: 200 on protected route with empty otp → kage T1550"),
+    "SESSION":   (lambda p: f"/{p}/session?sid=100", '"role": "admin"',
+                  "sequential session ids — sid 100 is admin, sid 101 is not",
+                  "auth log: sequential sid accepted → kage T1550"),
+    "HWDEV":     (lambda p: f"/{p}/state?id=0000", '"master_key"',
+                  "reserved master device id enumerable — registry never checks who asks",
+                  "api log: registry hit for reserved id 0000 → kage T1550"),
+}
+
+
+def _h_surface(archetype, surface):
+    prefix = _SURFACES[surface]["path"]
+    flavor = _SURFACES[surface]["flavor"]
+    confirm, lesson, detect = _ARCS[archetype][1], _ARCS[archetype][2], _ARCS[archetype][3]
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def _out(self, obj, code=200):
+            b = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+        def do_GET(self):
+            from urllib.parse import urlparse, parse_qs, unquote as _uq
+            from urllib.parse import urlsplit as _split
+            p = self.path
+            _par = parse_qs(urlparse(p).query)
+            def _one(*names):
+                for n in names:
+                    if n in _par and _par[n]:
+                        return _par[n][0]
+                return None
+            if _split(p).path.startswith(f"/{prefix}/orders"):
+                v = _one("uid", "org_id", "user_id", "account_id", "order_id") or "me"
+                self._out({"uid": v, "secret": "SECRET-9f2c", "orders": [1]})
+            elif archetype == "TRAVERSAL" and "../" in _uq(p):
+                self._out({"file": "root:x:0:0:root:/root:/bin/bash"})
+            elif archetype == "XSS" and _split(p).path.startswith(f"/{prefix}/search"):
+                v = _one("q", "search", "term", "name") or ""
+                self._out({"results": v})
+            elif archetype == "REDIRECT" and _split(p).path.startswith(f"/{prefix}/r"):
+                u = _one("url", "next", "redirect", "dest") or "/"
+                self.send_response(302)
+                self.send_header("Location", u)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            elif archetype == "CRYPTO" and _split(p).path.startswith(f"/{prefix}/state"):
+                self._out({"tls": "v1.0", "cipher": "rc4"})
+            elif archetype == "NETWORK" and _split(p).path.startswith(f"/{prefix}/net"):
+                self._out({"open": [21, 22, 3306], "banner": "vsftpd 2.3.4"})
+            elif archetype == "INJECTION" and _split(p).path.startswith(f"/{prefix}/search"):
+                import re as _re
+                term = _one("q", "search", "name", "filter", "sort", "msg") or ""
+                m = _re.match(r"^(?:\{\{|\$\{|<%=|#\{)([\d\s()*+\-/]+)\}?\}?$", term)
+                if m:
+                    try:
+                        term = str(eval(m.group(1)) if any(c in m.group(1) for c in "*/+-") else term)
+                    except Exception:
+                        term = term
+                self._out({"results": "for " + term})
+            elif archetype == "SSRF" and _split(p).path.startswith(f"/{prefix}/fetch"):
+                u = _one("url", "uri", "fetch", "target", "src") or ""
+                if any(x in u for x in ("127.0.0.1", "169.254.169.254", "localhost",
+                                        "[::1]", "0x7f000001", "2130706433")):
+                    self._out({"fetched": "INTERNAL-BANNER-7f3a"})
+                else:
+                    self._out({"fetched": "denied"})
+            elif archetype == "JWT" and _split(p).path.startswith(f"/{prefix}/admin"):
+                import base64 as _b64
+                tok = _one("token") or ""
+                admin = False
+                try:
+                    payload = json.loads(_b64.urlsafe_b64decode(tok.split(".")[1] + "=="))
+                    admin = payload.get("role") == "admin"
+                except Exception:
+                    admin = False
+                self._out({"admin": admin})
+            elif archetype == "AUTHN" and _split(p).path.startswith(f"/{prefix}/otp"):
+                otp = _one("otp", "token", "code", "nonce") if (_one("otp", "token", "code", "nonce") is not None) else ""
+                self._out({"verified": otp in ("", "null", "0", "123456", "undefined", "none", "false"), "otp_seen": otp})
+            elif archetype == "SESSION" and _split(p).path.startswith(f"/{prefix}/session"):
+                try:
+                    uid = int(_one("sid", "session", "id") or "")
+                except Exception:
+                    uid = None
+                self._out({"role": "admin" if uid is not None and uid % 100 == 0 else "user"})
+            elif archetype == "HWDEV" and _split(p).path.startswith(f"/{prefix}/state"):
+                dev = _one("id", "device") or ""
+                if dev == "0000":
+                    self._out({"type": "master_controller", "master_key": "MASTERKEY-7f3a"})
+                else:
+                    self._out({"type": "led_strip", "device": dev, "state": "on"})
+            elif archetype == "DIRECTORY" and p.endswith("/static/"):
+                self._out({"listing": ["backup.zip", "db.sql", ".env"]})
+            elif archetype == "HARVEST" and p.endswith("backup.zip"):
+                self._out({"backup": "FAKEBACKUPDATA"})
+            else:
+                self._out({"error": "nope"}, 404)
+        def do_POST(self):
+            ln = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(ln).decode("utf-8", "replace")
+            fields = dict(x.split("=", 1) for x in body.split("&") if "=" in x)
+            if archetype == "REPLAY" and "/webhook" in self.path:
+                H._hits = getattr(H, "_hits", 0) + 1
+                out = {"accepted": True, "dup": H._hits}
+                if "role" in fields:
+                    out["role"] = fields["role"]
+                self._out(out)
+            elif archetype == "MASSASSIGN" and "/user" in self.path:
+                self._out({"role": fields.get("role", "user"), "name": fields.get("name", "")})
+            else:
+                self._out({"error": "nope"}, 404)
+    return H
+
+
 CLASSES = {
     "BOUNDARY":  {"flaw": 6, "seam": "E", "canon": "kairo BOUNDARY · CWE-639",
                   "build": _h_boundary, "probe": "/api/orders?org_id=foreign",
@@ -472,6 +646,18 @@ CLASSES = {
                   "lesson": "reserved master device id enumerable — the registry never checks who asks (smart-home IDOR)",
                   "detect": "api log: device registry hit for reserved id 0000 → kage T1550"},
 }
+
+# ── v3.0 surface tier (must run AFTER CLASSES exists) ───────────────────────
+for _arc in _ARCS:
+    for _surf in _SURFACES:
+        _cls = f"{_arc}-{_surf}"
+        _probe = _ARCS[_arc][0](_SURFACES[_surf]["path"])
+        CLASSES[_cls] = {"flaw": 3, "seam": "S",
+                         "canon": f"generated surface tier: {_arc} × {_surf} (spydermonkey v6.0)",
+                         "build": (lambda srv_state, _a=_arc, _s=_surf: _h_surface(_a, _s)),
+                         "probe": _probe,
+                         "confirm": _ARCS[_arc][1], "lesson": _ARCS[_arc][2],
+                         "detect": _ARCS[_arc][3]}
 
 
 def _serve(cls, port):
@@ -626,7 +812,7 @@ def cmd_verify(args):
         if want not in subprocess.run([sys.executable, str(self), "--help"],
                                       capture_output=True, text=True).stdout:
             bad.append(want)
-    if len(CLASSES) < 15:
+    if len(CLASSES) < 80:
         bad.append("catalog")
     # live: build a HARVEST replica on an ephemeral port and probe it
     port = 8891
@@ -648,7 +834,7 @@ def cmd_verify(args):
     if bad:
         print(f"✗ DOJO verify FAILED: {bad}")
         return 1
-    print("✓ DOJO verify: compile · commands · 16 classes · live build+probe+bench — ALL PASS")
+    print("✓ DOJO verify: compile · commands · 80 classes · live build+probe+bench — ALL PASS")
     return 0
 
 

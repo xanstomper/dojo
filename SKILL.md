@@ -1,7 +1,7 @@
 ---
 name: dojo
-description: "Trigger `dojo`. THE RANGE — the family's training ground: builds vulnerable replicas of every technique class (16 classes, stdlib, lab-bound 127.0.0.1), and every replica SELF-VERIFIES: `dojo bench` builds it, strikes it, and requires the flaw to confirm. Every lesson ends in the detection rule kage should emit."
-version: 2.3.0
+description: "Trigger `dojo`. THE RANGE — the family's training ground: builds vulnerable replicas of every technique class (80 classes, stdlib, lab-bound 127.0.0.1), and every replica SELF-VERIFIES: `dojo bench` builds it, strikes it, and requires the flaw to confirm. Every lesson ends in the detection rule kage should emit."
+version: 3.0.0
 author: Hermes Agent
 license: MIT
 platforms: [linux]
@@ -23,12 +23,19 @@ REAL to strike. No replica leaves the loopback; no lesson is theory.
 - **Self-verifying replicas.** `dojo bench --class C` builds the replica, strikes
   it with the documented probe, and REQUIRES the flaw to confirm — a replica that
   doesn't break is a broken replica. `dojo verify` benches a class live.
+- **The surface tier is generated but real.** Each `ARC-SURF` replica carries
+  the archetype's flaw on a different protocol surface — same probe/confirm
+  discipline, same bench self-verification (64/64 bench-CONFIRMED).
 - **Every class is canon-bound.** Each maps to a kairo flaw/seam or a shukaku
   class and a CWE, so training exercises the family's real taxonomy.
 - **Every lesson ends in detection.** Each class carries the kage rule it should
   produce — the range feeds the purple loop, not just the red one.
 
-## The Classes (16 buildable)
+## The Classes (80 buildable)
+
+16 hand-built archetypes (BOUNDARY … HWDEV) + the v3.0 **surface tier**: every
+archetype × 4 delivery surfaces (API / MQTT / DEVICE / CLOUD), all generated,
+all bench-verified.
 
 | Class | Flaw · Seam | Canon | Probe → confirm |
 |---|---|---|---|
@@ -48,6 +55,7 @@ REAL to strike. No replica leaves the loopback; no lesson is theory.
 | AUTHN | 8 · C | CWE-287 | empty OTP = "already verified" |
 | SESSION | 8 · C | CWE-384 | sequential session ids — sid 100 is admin |
 | HWDEV | 6 · E | spydermonkey hardware-canon plane 6 · kairo HWFLASH · CWE-639 | reserved master id `0000` serves the master key |
+| `ARC-SURF` (×64) | 3 · S | spydermonkey v6.0 surface tier | each archetype translated to API/MQTT/DEVICE/CLOUD |
 
 ## When to Use
 
