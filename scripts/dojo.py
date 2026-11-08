@@ -382,6 +382,126 @@ def _h_hwdev(srv_state):
     return H
 
 
+def _h_statebypass(srv_state):
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def _handle(self):
+            if self.path.startswith("/api/v1/order/transition"):
+                q = self.path.split("?", 1)[1] if "?" in self.path else ""
+                params = dict(kv.split("=", 1) for kv in q.split("&") if "=" in kv)
+                order, to = params.get("order", ""), params.get("to", "")
+                # the flaw: the transition handler NEVER checks the flow's
+                # prerequisite — "shipped" is reachable straight from created
+                flow = {"created": ["paid"], "paid": ["shipped", "refunded"],
+                        "shipped": ["delivered"], "delivered": [], "refunded": []}
+                allowed = flow.get(ORDERS.get(order, "created"), [])
+                if to in flow and (to in allowed or True):   # the guard is MISSING
+                    ORDERS[order] = to
+                    b = json.dumps({"order": order, "state": to,
+                                    "accepted": True}).encode()
+                    code = 200
+                else:
+                    b = json.dumps({"error": "unknown transition"}).encode()
+                    code = 400
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+            else:
+                b = b"nope"
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+        do_GET = do_POST = _handle
+    return H
+
+
+ORDERS = {"1001": "created"}
+
+
+def _h_math(srv_state):
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def do_GET(self):
+            if self.path.startswith("/api/v1/wallet/split"):
+                q = self.path.split("?", 1)[1] if "?" in self.path else ""
+                params = dict(kv.split("=", 1) for kv in q.split("&") if "=" in kv)
+                try:
+                    amount = float(params.get("amount", "0"))
+                    n = int(params.get("n", "1"))
+                except ValueError:
+                    b = json.dumps({"error": "bad amount/n"}).encode()
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(b)))
+                    self.end_headers()
+                    self.wfile.write(b)
+                    return
+                # the flaw: float division + per-share rounding DOWN — the
+                # credited total drifts below the real amount (residue vanishes)
+                share = round(amount / n, 2)
+                credited = round(share * n, 2)
+                b = json.dumps({"amount": amount, "shares": n,
+                                "share": share,
+                                "total_credited": credited,
+                                "residue": round(amount - credited, 2)}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+            else:
+                b = b"nope"
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+    return H
+
+
+def _h_hwflash(srv_state):
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def do_GET(self):
+            if self.path.startswith("/api/v1/device/firmware"):
+                q = self.path.split("?", 1)[1] if "?" in self.path else ""
+                params = dict(kv.split("=", 1) for kv in q.split("&") if "=" in kv)
+                dev = params.get("dev", "")
+                signed = params.get("signed", "true").lower() != "false"
+                # the flaw: the update path lets the CLIENT declare the payload
+                # pre-signed — "signed=false" flashes anyway, no guard
+                if dev and not signed:
+                    b = json.dumps({"device": dev, "flashed": True,
+                                    "signature": "unverified",
+                                    "version": "1.0.1-unsigned"}).encode()
+                elif dev:
+                    b = json.dumps({"device": dev, "flashed": True,
+                                    "signature": "verified",
+                                    "version": "1.0.1"}).encode()
+                else:
+                    b = json.dumps({"error": "device required"}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+            else:
+                b = b"nope"
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+    return H
+
+
 # ── v3.0 (spydermonkey v6.0) — THE SURFACE TIER: 16 archetypes × 4 delivery
 # surfaces (API / MQTT / DEVICE / CLOUD) = 64 generated classes. Same flaw
 # semantics as the archetype, translated to a different protocol surface.
@@ -645,6 +765,27 @@ CLASSES = {
                   "confirm": '"master_key"',
                   "lesson": "reserved master device id enumerable — the registry never checks who asks (smart-home IDOR)",
                   "detect": "api log: device registry hit for reserved id 0000 → kage T1550"},
+    "STATEBYPASS": {"flaw": 5, "seam": "B",
+                    "canon": "kairo STATEBYPASS · kairo REPLAY · CWE-354",
+                    "build": _h_statebypass,
+                    "probe": "/api/v1/order/transition?order=1001&to=shipped",
+                    "confirm": '"state": "shipped"',
+                    "lesson": "the transition handler never checks the flow's prerequisite — out-of-order jumps land undocumented states",
+                    "detect": "api log: state transition skipping prerequisite → kage T1047"},
+    "MATH":      {"flaw": 10, "seam": "C",
+                  "canon": "kairo MATH · CWE-1335",
+                  "build": _h_math,
+                  "probe": "/api/v1/wallet/split?amount=10.03&n=3",
+                  "confirm": '"total_credited": 10.02',
+                  "lesson": "float division + per-share rounding-down — the credited total drifts and the residue vanishes into the operator's favor",
+                  "detect": "api log: reconcile mismatch between amount and credited totals → kage T1565"},
+    "HWFLASH":   {"flaw": 6, "seam": "E",
+                  "canon": "kairo HWFLASH · CWE-494",
+                  "build": _h_hwflash,
+                  "probe": "/api/v1/device/firmware?dev=cam7&signed=false",
+                  "confirm": '"signature": "unverified"',
+                  "lesson": "the update path lets the CLIENT declare the payload pre-signed — signature skip is a request parameter",
+                  "detect": "device log: firmware flash with signature=unverified → kage T1600"},
 }
 
 # ── v3.0 surface tier (must run AFTER CLASSES exists) ───────────────────────
