@@ -502,6 +502,79 @@ def _h_hwflash(srv_state):
     return H
 
 
+def _h_evbreak(srv_state):
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def do_GET(self):
+            from urllib.parse import unquote_plus
+            if self.path.startswith("/api/render"):
+                q = self.path.split("?", 1)[1] if "?" in self.path else ""
+                params = dict(kv.split("=", 1) for kv in q.split("&") if "=" in kv)
+                tpl = unquote_plus(params.get("tpl", "2+2"))
+                # the flaw: the param goes straight into eval — the classic
+                # python eval-injection (CWE-95); the legit use = the math
+                try:
+                    out = eval(tpl)  # noqa: S307 — the flaw
+                    b = str(out).encode()
+                except Exception as e:
+                    b = str(e).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+            else:
+                b = b"nope"
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+    return H
+
+
+def _h_fileup(srv_state):
+    updir = Path("/tmp/dojo-uploads")
+    updir.mkdir(exist_ok=True)
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+        def do_POST(self):
+            if self.path.startswith("/upload"):
+                n = int(self.headers.get("Content-Length", 0) or 0)
+                body = self.rfile.read(n).decode("utf-8", "replace")
+                # the flaw: the filename's extension never checked, and the
+                # uploaded code is EXECUTED server-side
+                saved = updir / "up.py"
+                # the crude multipart parse: the last part's payload
+                parts = body.split("\r\n\r\n")
+                content = parts[1].rsplit("\r\n--", 1)[0] if len(parts) > 1 else body
+                saved.write_text(content)
+                import io, contextlib
+                buf = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(buf):
+                        exec(compile(content, str(saved), "exec"), {})  # noqa: S102 — the flaw
+                except Exception as e:
+                    buf.write(str(e))
+                out = buf.getvalue().encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+            else:
+                b = b"nope"
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+        do_GET = do_POST
+    return H
+
+
 # ── v3.0 (spydermonkey v6.0) — THE SURFACE TIER: 16 archetypes × 4 delivery
 # surfaces (API / MQTT / DEVICE / CLOUD) = 64 generated classes. Same flaw
 # semantics as the archetype, translated to a different protocol surface.
@@ -786,6 +859,20 @@ CLASSES = {
                   "confirm": '"signature": "unverified"',
                   "lesson": "the update path lets the CLIENT declare the payload pre-signed — signature skip is a request parameter",
                   "detect": "device log: firmware flash with signature=unverified → kage T1600"},
+    "EVALBREAK": {"flaw": 9, "seam": "B",
+                  "canon": "kairo EVALBREAK · CWE-95",
+                  "build": _h_evbreak,
+                  "probe": "/api/render?tpl=__import__('os').popen('id').read()",
+                  "confirm": "uid=",
+                  "lesson": "the param goes straight into eval — the classic python eval-injection; the legit use (the math renderer) hides the interpreter",
+                  "detect": "api log: eval'd param produced a subprocess → kage T1059"},
+    "FILEUPLOAD": {"flaw": 8, "seam": "E",
+                   "canon": "kairo FILEUPLOAD · CWE-434",
+                   "build": _h_fileup,
+                   "probe": "POST /upload",
+                   "confirm": "SMRCE:",
+                   "lesson": "the filename's extension never checked and the upload is executed server-side — any file = code",
+                   "detect": "api log: an uploaded file executed server-side → kage T1059"},
 }
 
 # ── v3.0 surface tier (must run AFTER CLASSES exists) ───────────────────────
